@@ -17,8 +17,8 @@ class OddsEntry(BaseModel):
     ls1: float             # laystars best lay 1
     ls2: float             # laystars best lay 2
     ls3: float             # laystars best lay 3
-    diff: float            # back_odds - lay_odds (negative = value)
-    is_value: bool         # True when back_odds >= lay_odds (show RED)
+    diff: float            # back_odds - lay_odds (positive = value)
+    is_value: bool         # True when back_odds > lay_odds (show RED)
     updated_at: datetime
 
 

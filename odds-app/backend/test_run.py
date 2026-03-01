@@ -1,22 +1,22 @@
 import asyncio
 from scraper.novibet import NovibetScraper
 from scraper.laystars import LaystarsScraper
+from config import LAYSTARS_COOKIES
+
 
 async def test():
-    print("=== NOVIBET ===")
-    novibet = NovibetScraper()
-    await novibet.initialize()
-    result = await novibet.fetch()
-    print(f"Novibet: {len(result.entries)} entries, success={result.success}")
-
-    print("\n=== LAYSTARS ===")
+    print("=== LAYSTARS ===")
     laystars = LaystarsScraper()
-    result2 = await laystars.fetch()
-    print(f"Laystars: {len(result2.entries)} entries, success={result2.success}")
-    if result2.entries:
-        for e in result2.entries[:3]:
-            print(f"  {e.game_name} | {e.market} | ls1={e.ls1}")
+    await laystars.set_cookies(LAYSTARS_COOKIES)
+    # Fallback event IDs for when discovery (list-live-mapped) is down
+    laystars.event_ids = ["35320789"]
+    result = await laystars.fetch()
+    print(f"Laystars: {len(result.entries)} entries, success={result.success}")
+    if result.entries:
+        for e in result.entries[:5]:
+            print(f"  {e.game_name} | {e.market} | {e.selection} | ls1={e.ls1} | available={e.lay_available}")
+    else:
+        print(f"Error: {result.error}")
 
-    await novibet.cleanup()
 
 asyncio.run(test())

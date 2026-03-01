@@ -1,5 +1,11 @@
 """
 Merge bookmaker odds with laystars exchange data and detect changes.
+
+Matching key: (normalized_game_name, market, selection)
+  - exact first, then fuzzy (>=80) on game portion with exact market+selection.
+Staleness:  both sides must have updated_at within STALENESS_SECONDS of each other.
+Skip:       rows where back_odds == 0 or lay_odds == 0 after merge are dropped.
+Value rule: diff = back - lay; is_value = diff > 0  (positive diff → RED row).
 """
 
 from __future__ import annotations
@@ -9,12 +15,21 @@ from rapidfuzz import fuzz
 
 from models import OddsEntry, ScraperResult, OddsDelta
 
+STALENESS_SECONDS = 10.0
+FUZZY_THRESHOLD = 80
 
-def _fuzzy_match_game_id(game_id1: str, game_id2: str, threshold: int = 80) -> bool:
-    """True if similarity >= threshold."""
-    if not game_id1 or not game_id2:
-        return False
-    return fuzz.ratio(game_id1, game_id2) >= threshold
+
+def _norm_game(entry: OddsEntry) -> str:
+    return entry.game_name.strip().lower()
+
+
+def _norm_sel(entry: OddsEntry) -> str:
+    return entry.selection.strip().lower()
+
+
+def _match_key(entry: OddsEntry) -> tuple[str, str, str]:
+    """(normalized_game, market, normalized_selection) — exact composite key."""
+    return (_norm_game(entry), entry.market, _norm_sel(entry))
 
 
 class OddsComparator:
@@ -25,17 +40,23 @@ class OddsComparator:
         bookmaker_results: list[ScraperResult],
         laystars_result: ScraperResult,
     ) -> list[OddsEntry]:
+        """Merge bookmaker entries with laystars lay data.
+
+        1. Build lay-side index keyed by (game, market, selection).
+        2. For each bookmaker row (back_odds > 0):
+           a. Exact key lookup, else fuzzy on game (>= 80) with exact market+selection.
+           b. Skip if no lay match or lay_odds == 0.
+           c. Skip if staleness exceeds STALENESS_SECONDS.
+           d. Compute diff / is_value, emit merged row.
         """
-        Merge all bookmaker entries with laystars lay data.
-        - Build dict of laystars entries keyed by game_id.
-        - For each bookmaker entry: exact game_id match first, else fuzzy (>= 80).
-        - Fill lay_odds, ls1, ls2, ls3, lay_available from match.
-        - diff = back_odds - lay_odds; is_value = back_odds >= lay_odds.
-        - No match -> keep entry with is_value=False.
-        """
-        lay_by_id: dict[str, OddsEntry] = {}
+        lay_exact: dict[tuple[str, str, str], OddsEntry] = {}
+        lay_by_market_sel: dict[tuple[str, str], list[OddsEntry]] = {}
+
         for e in laystars_result.entries:
-            lay_by_id[e.game_id] = e
+            key = _match_key(e)
+            lay_exact[key] = e
+            ms = (e.market, _norm_sel(e))
+            lay_by_market_sel.setdefault(ms, []).append(e)
 
         merged: list[OddsEntry] = []
 
@@ -43,39 +64,47 @@ class OddsComparator:
             if not result.entries:
                 continue
             for entry in result.entries:
-                gid = entry.game_id
-                lay = lay_by_id.get(gid)
+                if entry.back_odds <= 0:
+                    continue
+
+                lay = lay_exact.get(_match_key(entry))
 
                 if lay is None:
-                    # Fuzzy match: find best lay entry with ratio >= 80
-                    for lid, lay_cand in lay_by_id.items():
-                        if _fuzzy_match_game_id(gid, lid, 80):
-                            lay = lay_cand
-                            break
+                    ms = (entry.market, _norm_sel(entry))
+                    candidates = lay_by_market_sel.get(ms, [])
+                    if candidates:
+                        book_game = _norm_game(entry)
+                        best_ratio = 0.0
+                        best_lay: OddsEntry | None = None
+                        for cand in candidates:
+                            ratio = fuzz.ratio(book_game, _norm_game(cand))
+                            if ratio >= FUZZY_THRESHOLD and ratio > best_ratio:
+                                best_ratio = ratio
+                                best_lay = cand
+                        lay = best_lay
 
-                if lay is not None:
-                    merged.append(
-                        entry.model_copy(
-                            update={
-                                "lay_odds": lay.lay_odds,
-                                "lay_available": lay.lay_available,
-                                "ls1": lay.ls1,
-                                "ls2": lay.ls2,
-                                "ls3": lay.ls3,
-                                "diff": entry.back_odds - lay.lay_odds,
-                                "is_value": entry.back_odds >= lay.lay_odds,
-                            }
-                        )
+                if lay is None or lay.lay_odds <= 0:
+                    continue
+
+                age = abs((entry.updated_at - lay.updated_at).total_seconds())
+                if age > STALENESS_SECONDS:
+                    continue
+
+                diff = entry.back_odds - lay.lay_odds
+
+                merged.append(
+                    entry.model_copy(
+                        update={
+                            "lay_odds": lay.lay_odds,
+                            "lay_available": lay.lay_available,
+                            "ls1": lay.ls1,
+                            "ls2": lay.ls2,
+                            "ls3": lay.ls3,
+                            "diff": diff,
+                            "is_value": diff > 0,
+                        }
                     )
-                else:
-                    merged.append(
-                        entry.model_copy(
-                            update={
-                                "diff": entry.back_odds,  # no lay -> diff = back
-                                "is_value": False,
-                            }
-                        )
-                    )
+                )
 
         return merged
 
@@ -84,10 +113,11 @@ class OddsComparator:
         old: list[OddsEntry],
         new: list[OddsEntry],
     ) -> OddsDelta:
-        """
-        Compare old vs new by game_id.
-        changed = entries where back_odds, lay_odds, or is_value changed.
+        """Compare old vs new by game_id.
+
+        changed = entries where back_odds, lay_odds, diff, or is_value changed.
         removed = game_ids in old but not in new.
+        Only returns a non-empty delta when something actually moved.
         """
         new_by_id: dict[str, OddsEntry] = {e.game_id: e for e in new}
         old_by_id: dict[str, OddsEntry] = {e.game_id: e for e in old}
@@ -101,6 +131,7 @@ class OddsComparator:
             if (
                 old_entry.back_odds != new_entry.back_odds
                 or old_entry.lay_odds != new_entry.lay_odds
+                or old_entry.diff != new_entry.diff
                 or old_entry.is_value != new_entry.is_value
             ):
                 changed.append(new_entry)
@@ -115,10 +146,7 @@ class OddsComparator:
         )
 
     def normalize_for_display(self, entries: list[OddsEntry]) -> list[OddsEntry]:
-        """
-        Sort by is_value DESC (value rows first), then game_time ASC.
-        Round all floats to 2 decimal places.
-        """
+        """Sort by is_value DESC then game_time ASC. Round all floats to 2dp."""
         sorted_entries = sorted(
             entries,
             key=lambda e: (not e.is_value, e.game_time or ""),

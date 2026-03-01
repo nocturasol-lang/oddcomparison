@@ -29,11 +29,11 @@ FETCH_HEADERS = {
     "X-Gw-Application-Name": "Novi",
     "X-Gw-Channel": "WebPC",
     "X-Gw-Country-Sysname": "GR",
-    "X-Gw-Language-Sysname": "el-GR",
+    "X-Gw-Language-Sysname": "en-GB",
     "X-Gw-Odds-Representation": "Decimal",
 }
 
-COMMON_PARAMS = "lang=el-GR&timeZ=GTB+Standard+Time&oddsR=1&usrGrp=GR"
+COMMON_PARAMS = "lang=en-GB&timeZ=GTB+Standard+Time&oddsR=1&usrGrp=GR"
 
 
 class NovibetScraper(BaseScraper):
@@ -53,7 +53,7 @@ class NovibetScraper(BaseScraper):
         )
         ctx = await self._browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/145.0.0.0 Safari/537.36",
-            locale="el-GR",
+            locale="en-GB",
             timezone_id="Europe/Athens",
         )
         await ctx.add_init_script(
@@ -69,7 +69,7 @@ class NovibetScraper(BaseScraper):
         )
         await asyncio.sleep(4)
 
-        for sel in ["text=Αποδέχομαι", "text=Αποδοχή", "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll"]:
+        for sel in ["text=I Accept", "text=Accept", "text=Αποδέχομαι", "text=Αποδοχή", "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll"]:
             try:
                 btn = await self._page.query_selector(sel)
                 if btn:
@@ -113,7 +113,7 @@ class NovibetScraper(BaseScraper):
             ts = int(time.time() * 1000)
 
             # Step 1: Get all live soccer events + basic info
-            main_url = f"https://www.novibet.gr/spt/feed/marketviews/location/v2/4324/4390/?lang=el-GR&timeZ=GTB+Standard+Time&oddsR=1&usrGrp=GR&timestamp={ts}"
+            main_url = f"https://www.novibet.gr/spt/feed/marketviews/location/v2/4324/4390/?lang=en-GB&timeZ=GTB+Standard+Time&oddsR=1&usrGrp=GR&timestamp={ts}"
             data = await self._fetch_json(main_url)
 
             if not data:
@@ -155,15 +155,6 @@ class NovibetScraper(BaseScraper):
             print(f"Raw event keys: {list(first_event.keys())}")
 
             # Step 3: Parse odds directly from each event's raw object (no HTTP calls)
-            ALLOWED_MARKETS = {
-                "SOCCER_MATCH_RESULT": "MATCH_ODDS",
-                "SOCCER_UNDER_OVER": "GOALS_OVER_UNDER",
-                "SOCCER_DOUBLE_CHANCE": "DOUBLE_CHANCE",
-                "SOCCER_FIRST_HALF_RESULT": "FIRST_HALF_RESULT",
-                "SOCCER_BOTH_TEAMS_TO_SCORE": "BOTH_TEAMS_TO_SCORE",
-                "SOCCER_FIRST_HALF_UNDER_OVER": "FIRST_HALF_OVER_UNDER",
-            }
-
             def parse_event_odds(event: dict, debug_first: bool = False) -> list[OddsEntry]:
                 home = event["home"]
                 away = event["away"]
@@ -188,10 +179,9 @@ class NovibetScraper(BaseScraper):
                         ""
                     )
 
-                    if bet_type not in ALLOWED_MARKETS:
+                    if not self.is_market_allowed(bet_type):
                         continue
-
-                    market_std = ALLOWED_MARKETS[bet_type]
+                    market_std = bet_type
 
                     selections = market.get("betItems") or []
 

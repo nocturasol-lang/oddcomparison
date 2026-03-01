@@ -8,49 +8,43 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
 
 from .novibet import NovibetScraper
-# from .laystars import LaystarsScraper  # disabled for localhost test without Laystars
-
-if TYPE_CHECKING:
-    from ..comparator import OddsComparator
-    from ..models import OddsEntry, OddsDelta, ScraperResult
+from .laystars import LaystarsScraper
 
 log = logging.getLogger(__name__)
-
-
-def _mock_laystars_result():
-    """Mock Laystars result (empty) for localhost test without Laystars scraper."""
-    from ..models import ScraperResult
-    return ScraperResult(
-        source="laystars",
-        entries=[],
-        scraped_at=datetime.now(timezone.utc),
-        success=True,
-        error=None,
-    )
 
 
 class OddsOrchestrator:
     """Runs bookmaker + laystars scrapers, merges results, broadcasts changes."""
 
     def __init__(self) -> None:
-        self.scrapers: list = [NovibetScraper()]  # add Stoiximan, BetShop later
-        # self.laystars = LaystarsScraper()  # disabled for localhost test
-        from ..comparator import OddsComparator
+        self.scrapers: list = [NovibetScraper()]
+        self.laystars = LaystarsScraper()
+
+        from comparator import OddsComparator
         self.comparator = OddsComparator()
 
-        self.current_odds: list = []  # list[OddsEntry]
+        self.current_odds: list = []
         self._running = False
         self._poll_task: asyncio.Task | None = None
         self.subscribers: list[asyncio.Queue] = []
 
     async def start(self) -> None:
-        """Initialize scrapers (e.g. single browser), set _running=True, run _poll_loop in background."""
+        """Initialize scrapers, wire cookies, start poll loop."""
         for s in self.scrapers:
             if hasattr(s, "initialize"):
                 await s.initialize()
+
+        try:
+            from config import LAYSTARS_COOKIES
+            if LAYSTARS_COOKIES:
+                await self.laystars.set_cookies(LAYSTARS_COOKIES)
+                log.info("Laystars cookies loaded (%d chars)", len(LAYSTARS_COOKIES))
+            else:
+                log.warning("LAYSTARS_COOKIES is empty — Laystars scraper will return no data")
+        except ImportError:
+            log.warning("config.py not found — Laystars scraper will return no data")
 
         self._running = True
         self._poll_task = asyncio.create_task(self._poll_loop())
@@ -61,21 +55,31 @@ class OddsOrchestrator:
         while self._running:
             cycle_start = time.monotonic()
 
-            # Run bookmaker scrapers only (Laystars disabled for localhost test)
             bookmaker_tasks = [s.fetch() for s in self.scrapers]
-            # laystars_task = self.laystars.fetch()
+            laystars_task = self.laystars.fetch()
 
             results: list = []
-            gathered = await asyncio.gather(*bookmaker_tasks, return_exceptions=True)
+            gathered = await asyncio.gather(
+                *bookmaker_tasks, laystars_task, return_exceptions=True,
+            )
 
+            laystars_result = None
             for r in gathered:
                 if isinstance(r, Exception):
-                    log.warning(f"Scraper error: {r}")
+                    log.warning("Scraper error: %s", r)
                     continue
-                results.append(r)
+                if r.source == "laystars":
+                    laystars_result = r
+                else:
+                    results.append(r)
 
-            # Mock empty Laystars for localhost test without Laystars
-            laystars_result = _mock_laystars_result()
+            if laystars_result is None:
+                from models import ScraperResult
+                laystars_result = ScraperResult(
+                    source="laystars", entries=[],
+                    scraped_at=datetime.now(timezone.utc),
+                    success=False, error="scraper_exception",
+                )
 
             bookmaker_results = [r for r in results if r.success]
             merged = self.comparator.merge(bookmaker_results, laystars_result)
@@ -84,19 +88,19 @@ class OddsOrchestrator:
 
             self.current_odds = sorted_entries
 
-            # Push delta to all subscriber queues (non-blocking)
-            for q in self.subscribers:
-                try:
-                    q.put_nowait(delta)
-                except asyncio.QueueFull:
-                    log.debug("Subscriber queue full, drop delta")
+            if delta.changed or delta.removed:
+                for q in self.subscribers:
+                    try:
+                        q.put_nowait(delta)
+                    except asyncio.QueueFull:
+                        log.debug("Subscriber queue full, drop delta")
 
             elapsed = time.monotonic() - cycle_start
             value_count = sum(1 for e in self.current_odds if e.is_value)
             log.info(
-                f"Cycle: {elapsed*1000:.0f}ms | "
-                f"entries={len(self.current_odds)} | "
-                f"value={value_count}"
+                "Cycle: %.0fms | entries=%d | value=%d | laystars=%d",
+                elapsed * 1000, len(self.current_odds), value_count,
+                len(laystars_result.entries),
             )
 
             sleep_for = max(0, 4.0 - elapsed)
@@ -104,16 +108,13 @@ class OddsOrchestrator:
                 await asyncio.sleep(sleep_for)
 
     def subscribe(self) -> asyncio.Queue:
-        """Create a queue, add to subscribers, return it (for one WebSocket connection)."""
         q: asyncio.Queue = asyncio.Queue(maxsize=64)
         self.subscribers.append(q)
         return q
 
     def unsubscribe(self, queue: asyncio.Queue) -> None:
-        """Remove queue from subscribers."""
         if queue in self.subscribers:
             self.subscribers.remove(queue)
 
     def get_current(self) -> list:
-        """Return current_odds snapshot (list of OddsEntry)."""
         return list(self.current_odds)

@@ -10,6 +10,7 @@ import unicodedata
 from rapidfuzz import fuzz
 
 from models import ScraperResult
+from core.market_allowlist import SOCCER_ALLOWED
 
 
 class BaseScraper(ABC):
@@ -19,6 +20,11 @@ class BaseScraper(ABC):
     async def fetch(self) -> ScraperResult:
         """Load and parse odds. Return ScraperResult with entries or error."""
         ...
+
+    @staticmethod
+    def is_market_allowed(market_std: str) -> bool:
+        """Return True only if market_std is in the soccer allowlist."""
+        return market_std in SOCCER_ALLOWED
 
     def normalize_team_name(self, name: str) -> str:
         """Lowercase, remove accents (unicodedata), strip common suffixes, Greek abbreviations."""
