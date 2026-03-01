@@ -1,0 +1,22 @@
+# Prometheus scrape config for ODDSHAWK production.
+# Scrapes Redis exporter; add backend /metrics when exposed in Prometheus format.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+    metrics_path: /metrics
+
+  # Backend: scrape when app exposes /metrics in Prometheus format
+  # - job_name: backend
+  #   static_configs:
+  #     - targets: ["backend:8000"]
+  #   metrics_path: /metrics

@@ -1,0 +1,213 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Monospace for numbers */
+.mono {
+  font-family: 'Courier New', Courier, monospace;
+}
+
+/* App layout */
+.app {
+  min-height: 100vh;
+  padding: 1rem;
+}
+
+.app h1 {
+  text-align: center;
+  font-size: 1.75rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: #fff;
+}
+
+/* Bookmaker logos row */
+.bookmaker-row {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.bookmaker-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #252545;
+  border: 2px solid #3a3a5c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #a0a0c0;
+}
+
+/* Table container */
+.table-wrap {
+  overflow: auto;
+  max-height: calc(100vh - 200px);
+  border-radius: 8px;
+  border: 1px solid #2a2a4a;
+  background: #16162a;
+}
+
+.table-header-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #1e1e3a;
+}
+
+.odds-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.odds-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #1e1e3a;
+  padding: 0.5rem 0.4rem;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #a0a0c0;
+  border-bottom: 2px solid #2a2a4a;
+  white-space: nowrap;
+}
+
+.odds-table th.mono {
+  text-align: right;
+}
+
+.odds-table td {
+  padding: 0 0.4rem;
+  height: 34px;
+  font-size: 0.8rem;
+  border-bottom: 1px solid #252545;
+  vertical-align: middle;
+}
+
+.odds-table td.mono {
+  text-align: right;
+}
+
+.odds-table tbody {
+  display: block;
+}
+
+.odds-table thead,
+.odds-table tbody tr {
+  display: table;
+  table-layout: fixed;
+  width: 100%;
+}
+
+.odds-table tbody tr.row-even {
+  background: #1e1e3a;
+}
+
+.odds-table tbody tr.row-odd {
+  background: #252545;
+}
+
+.odds-table tbody tr.flash {
+  animation: flashYellow 800ms ease-out;
+}
+
+@keyframes flashYellow {
+  0% { background: #6b6b00; }
+  100% { background: transparent; }
+}
+
+.odds-table tbody tr.row-even.flash-done {
+  background: #1e1e3a;
+}
+
+.odds-table tbody tr.row-odd.flash-done {
+  background: #252545;
+}
+
+/* Value cells: red background */
+.cell-value {
+  background: #cc0000 !important;
+  color: #fff;
+  padding: 2px 4px;
+}
+
+.cell-value .liquidity {
+  font-size: 0.65rem;
+  opacity: 0.9;
+  display: block;
+}
+
+/* Diff colors */
+.diff-positive {
+  color: #00aa44;
+}
+
+.diff-negative {
+  color: #cc3333;
+}
+
+.diff-zero {
+  color: #888;
+}
+
+/* Status bar */
+.status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.75rem;
+  color: #8080a0;
+  background: #16162a;
+  border-top: 1px solid #2a2a4a;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  display: inline-block;
+}
+
+.status-dot.connected {
+  background: #00aa44;
+  box-shadow: 0 0 6px #00aa44;
+}
+
+.status-dot.disconnected {
+  background: #cc3333;
+}
+
+/* Column widths (approximate) */
+.col-time { width: 5%; }
+.col-link { width: 4%; }
+.col-lslink { width: 5%; }
+.col-game { width: 22%; }
+.col-market { width: 12%; }
+.col-selection { width: 14%; }
+.col-odds { width: 6%; }
+.col-ls1 { width: 7%; }
+.col-ls2 { width: 7%; }
+.col-ls3 { width: 7%; }
+.col-diff { width: 6%; }

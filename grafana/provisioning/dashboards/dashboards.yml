@@ -1,0 +1,12 @@
+# Provision dashboards from files
+apiVersion: 1
+providers:
+  - name: default
+    orgId: 1
+    folder: ODDSHAWK
+    folderUid: oddshawk
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards/json

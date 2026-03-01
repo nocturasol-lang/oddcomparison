@@ -1,0 +1,1 @@
+# Place cert.pem and key.pem here for Nginx SSL, or use Let's Encrypt and mount the cert dir.
